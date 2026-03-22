@@ -53,8 +53,13 @@ class Device:
 
     @property
     def id(self) -> str:
-        lowest = sorted(m.lower().replace(":", "") for m in self.mac_addresses)[0]
-        return f"d-{lowest}"
+        if self.mac_addresses:
+            lowest = sorted(m.lower().replace(":", "") for m in self.mac_addresses)[0]
+            return f"d-{lowest}"
+        # Fallback to IP-based ID when no MACs are available
+        if self.ip_addresses:
+            return f"d-ip-{self.ip_addresses[0].replace('.', '-')}"
+        return f"d-{self.hostname}"
 
     def to_dict(self) -> dict:
         return {

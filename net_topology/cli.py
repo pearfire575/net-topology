@@ -87,9 +87,9 @@ def run_scan(config_path: str) -> None:
             probe = futures[future]
             try:
                 device, lldp_entries, fdb_entries = future.result()
-                devices.append(device)
                 device_lldp[device.id] = (device, lldp_entries)
                 device_fdb[device.id] = (device, fdb_entries)
+                devices.append(device)
             except Exception as e:
                 logger.error("Failed to collect %s: %s", probe.ip, e)
 
