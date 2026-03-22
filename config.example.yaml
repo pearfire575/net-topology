@@ -1,0 +1,41 @@
+seed:
+  host: 192.168.1.1
+  type: mikrotik
+  api:
+    username: admin
+    password: changeme  # Supports ${ENV_VAR} substitution
+    port: 8728
+
+discovery_scope:
+  - 192.168.1.0/24
+
+snmp:
+  default:
+    version: 2c
+    community: public
+  # overrides:  # Most-specific match wins (IP > subnet)
+  #   - match: 192.168.1.10
+  #     community: private
+  #   - match: 10.0.0.0/16
+  #     version: 3
+  #     security_level: authPriv
+  #     username: snmpuser
+  #     auth_protocol: SHA
+  #     auth_password: authpass
+  #     priv_protocol: AES
+  #     priv_password: privpass
+
+# mikrotik_api:  # Seed device is implicitly included
+#   extra_devices:
+#     - host: 192.168.1.5
+#   username: admin
+#   password: changeme
+
+output:
+  format: json
+  file: topology.json
+
+concurrency: 10
+
+logging:
+  level: info
