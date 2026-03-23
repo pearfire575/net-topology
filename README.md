@@ -23,6 +23,13 @@ A Python CLI tool that automatically discovers network devices, collects invento
 | Zyxel    | SNMP      | SNMP      | LLDP     | —          |
 | Other    | SNMP      | SNMP      | LLDP/CDP | —          |
 
+## Requirements
+
+- Python 3.10+
+- [pysnmp](https://github.com/lextudio/pysnmp) v7 (async, lextudio-maintained fork)
+- [routeros-api](https://pypi.org/project/RouterOS-api/) for MikroTik enrichment
+- PyYAML
+
 ## Installation
 
 ```bash
@@ -180,13 +187,13 @@ python -m pytest tests/test_topology.py -v
 ```
 net_topology/
   __init__.py          # version
-  cli.py               # CLI entry point and scan pipeline
+  cli.py               # CLI entry point and async scan pipeline
   config.py            # YAML config loading, env var substitution, SNMP credential resolution
-  discovery.py         # SNMP-based device discovery, vendor/type classification
+  discovery.py         # async SNMP-based device discovery, vendor/type classification
   export.py            # JSON/YAML export
   models.py            # Device, Interface, Link, Endpoint, ScanResult dataclasses
   seed.py              # MikroTik RouterOS API seeder (ARP + LLDP)
-  snmp.py              # pysnmp wrapper (get, walk, SNMPv2c/v3 auth)
+  snmp.py              # async pysnmp v7 wrapper (get, walk, SNMPv2c/v3 auth)
   topology.py          # LLDP link correlation, FDB endpoint mapping
   collectors/
     base.py            # BaseCollector ABC

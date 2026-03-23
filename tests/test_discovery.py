@@ -1,4 +1,5 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
+import asyncio
 import pytest
 from net_topology.discovery import (
     DeviceProbe, discover_devices, classify_vendor, classify_device_type,
@@ -48,15 +49,15 @@ def test_device_probe_unmanaged():
 @patch("net_topology.discovery.SnmpClient")
 def test_discover_classifies_responding_device_as_managed(mock_snmp_cls):
     mock_client = MagicMock()
-    mock_client.get_sys_info.return_value = {
+    mock_client.get_sys_info = AsyncMock(return_value={
         "1.3.6.1.2.1.1.5.0": "mikrotik-gw",
         "1.3.6.1.2.1.1.1.0": "RouterOS RB4011",
         "1.3.6.1.2.1.1.2.0": "1.3.6.1.4.1.14988.1",
-    }
+    })
     mock_snmp_cls.return_value = mock_client
     creds = SnmpCredentials(version="2c", community="public")
     ips_macs = [("192.168.1.1", "AA:BB:CC:DD:EE:FF")]
-    results = discover_devices(ips_macs, lambda ip: creds, max_workers=1)
+    results = asyncio.run(discover_devices(ips_macs, lambda ip: creds, max_workers=1))
     assert len(results) == 1
     assert results[0].is_managed is True
     assert results[0].vendor == Vendor.MIKROTIK
@@ -65,10 +66,10 @@ def test_discover_classifies_responding_device_as_managed(mock_snmp_cls):
 def test_discover_classifies_unreachable_as_endpoint(mock_snmp_cls):
     from net_topology.snmp import SnmpError
     mock_client = MagicMock()
-    mock_client.get_sys_info.side_effect = SnmpError("timeout")
+    mock_client.get_sys_info = AsyncMock(side_effect=SnmpError("timeout"))
     mock_snmp_cls.return_value = mock_client
     creds = SnmpCredentials(version="2c", community="public")
     ips_macs = [("192.168.1.50", "11:22:33:44:55:66")]
-    results = discover_devices(ips_macs, lambda ip: creds, max_workers=1)
+    results = asyncio.run(discover_devices(ips_macs, lambda ip: creds, max_workers=1))
     assert len(results) == 1
     assert results[0].is_managed is False

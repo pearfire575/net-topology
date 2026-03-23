@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from pysnmp.hlapi import (
+from pysnmp.hlapi.v3arch.asyncio import (
     CommunityData,
     ContextData,
     ObjectIdentity,
@@ -11,10 +11,10 @@ from pysnmp.hlapi import (
     SnmpEngine,
     UdpTransportTarget,
     UsmUserData,
-    getCmd,
-    nextCmd,
+    get_cmd,
+    next_cmd,
 )
-from pysnmp.hlapi import (
+from pysnmp.hlapi.v3arch.asyncio import (
     usmHMACSHAAuthProtocol,
     usmHMACMD5AuthProtocol,
     usmAesCfb128Protocol,
@@ -78,10 +78,10 @@ class SnmpClient:
     def _build_transport(self):
         return UdpTransportTarget((self.host, self.port), timeout=self.timeout, retries=self.retries)
 
-    def get(self, *oids: str) -> dict[str, str]:
+    async def get(self, *oids: str) -> dict[str, str]:
         object_types = [ObjectType(ObjectIdentity(oid)) for oid in oids]
-        error_indication, error_status, error_index, var_binds = next(
-            getCmd(self._engine, self._build_auth(), self._build_transport(), ContextData(), *object_types)
+        error_indication, error_status, error_index, var_binds = await get_cmd(
+            self._engine, self._build_auth(), self._build_transport(), ContextData(), *object_types
         )
         if error_indication:
             raise SnmpError(f"SNMP error on {self.host}: {error_indication}")
@@ -92,28 +92,37 @@ class SnmpClient:
             result[oid.prettyPrint()] = val.prettyPrint()
         return result
 
-    def walk(self, oid: str) -> list[tuple[str, str]]:
+    async def walk(self, oid: str) -> list[tuple[str, str]]:
         results = []
-        for error_indication, error_status, error_index, var_binds in nextCmd(
-            self._engine, self._build_auth(), self._build_transport(), ContextData(),
-            ObjectType(ObjectIdentity(oid)), lexicographicMode=False,
-        ):
+        marker = None
+        while True:
+            target_oid = ObjectType(ObjectIdentity(oid)) if marker is None else marker
+            error_indication, error_status, error_index, var_binds = await next_cmd(
+                self._engine, self._build_auth(), self._build_transport(), ContextData(),
+                target_oid, lexicographicMode=False,
+            )
             if error_indication:
                 logger.warning("SNMP walk error on %s: %s", self.host, error_indication)
                 break
             if error_status:
                 logger.warning("SNMP walk error on %s: %s at %s", self.host, error_status.prettyPrint(), error_index)
                 break
+            if not var_binds:
+                break
             for oid_obj, val in var_binds:
-                results.append((oid_obj.prettyPrint(), val.prettyPrint()))
+                oid_str = oid_obj.prettyPrint()
+                if not oid_str.startswith(oid):
+                    return results
+                results.append((oid_str, val.prettyPrint()))
+            marker = var_binds[-1]
         return results
 
-    def is_reachable(self) -> bool:
+    async def is_reachable(self) -> bool:
         try:
-            self.get(OID_SYS_NAME)
+            await self.get(OID_SYS_NAME)
             return True
         except (SnmpError, StopIteration, Exception):
             return False
 
-    def get_sys_info(self) -> dict[str, str]:
-        return self.get(OID_SYS_NAME, OID_SYS_DESCR, OID_SYS_OBJECT_ID)
+    async def get_sys_info(self) -> dict[str, str]:
+        return await self.get(OID_SYS_NAME, OID_SYS_DESCR, OID_SYS_OBJECT_ID)

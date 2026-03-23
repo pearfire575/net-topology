@@ -52,11 +52,11 @@ class GenericSnmpCollector(BaseCollector):
         super().__init__(probe, credentials)
         self.client = SnmpClient(probe.ip, credentials)
 
-    def collect(self) -> tuple[Device, list[dict], list[dict]]:
-        interfaces = self._collect_interfaces()
-        lldp_entries = self._collect_lldp()
-        cdp_entries = self._collect_cdp()
-        fdb_entries = self._collect_fdb()
+    async def collect(self) -> tuple[Device, list[dict], list[dict]]:
+        interfaces = await self._collect_interfaces()
+        lldp_entries = await self._collect_lldp()
+        cdp_entries = await self._collect_cdp()
+        fdb_entries = await self._collect_fdb()
 
         if not lldp_entries and not cdp_entries:
             logger.warning(
@@ -91,11 +91,11 @@ class GenericSnmpCollector(BaseCollector):
 
         return device, all_neighbors, fdb_entries
 
-    def _collect_interfaces(self) -> list[Interface]:
-        descr_walk = self.client.walk(IF_DESCR)
-        phys_walk = self.client.walk(IF_PHYS_ADDR)
-        status_walk = self.client.walk(IF_OPER_STATUS)
-        speed_walk = self.client.walk(IF_HIGH_SPEED)
+    async def _collect_interfaces(self) -> list[Interface]:
+        descr_walk = await self.client.walk(IF_DESCR)
+        phys_walk = await self.client.walk(IF_PHYS_ADDR)
+        status_walk = await self.client.walk(IF_OPER_STATUS)
+        speed_walk = await self.client.walk(IF_HIGH_SPEED)
 
         descrs = {}
         for oid, val in descr_walk:
@@ -139,8 +139,8 @@ class GenericSnmpCollector(BaseCollector):
 
         return interfaces
 
-    def _collect_lldp(self) -> list[dict]:
-        raw = self.client.walk(OID_LLDP_REM_TABLE)
+    async def _collect_lldp(self) -> list[dict]:
+        raw = await self.client.walk(OID_LLDP_REM_TABLE)
         if not raw:
             return []
 
@@ -180,8 +180,8 @@ class GenericSnmpCollector(BaseCollector):
 
         return result
 
-    def _collect_cdp(self) -> list[dict]:
-        raw = self.client.walk(OID_CDP_CACHE_TABLE)
+    async def _collect_cdp(self) -> list[dict]:
+        raw = await self.client.walk(OID_CDP_CACHE_TABLE)
         if not raw:
             return []
 
@@ -206,12 +206,12 @@ class GenericSnmpCollector(BaseCollector):
 
         return list(entries_by_key.values())
 
-    def _collect_fdb(self) -> list[dict]:
+    async def _collect_fdb(self) -> list[dict]:
         """Collect MAC address (FDB) table to map endpoints to ports."""
-        raw = self.client.walk(OID_DOT1Q_TP_FDB)
+        raw = await self.client.walk(OID_DOT1Q_TP_FDB)
         is_qbridge = bool(raw)
         if not raw:
-            raw = self.client.walk(OID_DOT1D_TP_FDB)
+            raw = await self.client.walk(OID_DOT1D_TP_FDB)
 
         entries = []
         for oid, val in raw:

@@ -1,4 +1,4 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 import pytest
 from net_topology.snmp import SnmpClient, SnmpError
 from net_topology.config import SnmpCredentials
@@ -46,21 +46,19 @@ def test_build_auth_v3(creds_v3):
     assert auth is not None
 
 
-@patch("net_topology.snmp.getCmd")
+@patch("net_topology.snmp.get_cmd")
 def test_get_single_oid(mock_get_cmd, creds_v2c):
     mock_var_bind = MagicMock()
     mock_var_bind.__iter__ = lambda self: iter(
         [MagicMock(prettyPrint=lambda: "test-hostname")]
     )
-    mock_get_cmd.return_value = iter(
-        [(None, None, None, [mock_var_bind])]
-    )
+    mock_get_cmd.return_value = (None, None, None, [mock_var_bind])
     client = SnmpClient("192.168.1.1", creds_v2c)
     assert client is not None
 
 
-@patch("net_topology.snmp.nextCmd")
+@patch("net_topology.snmp.next_cmd")
 def test_walk_returns_list(mock_next_cmd, creds_v2c):
-    mock_next_cmd.return_value = iter([])
+    mock_next_cmd.return_value = (None, None, None, [])
     client = SnmpClient("192.168.1.1", creds_v2c)
     assert client is not None

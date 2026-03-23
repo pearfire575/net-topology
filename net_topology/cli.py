@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from net_topology.collectors.generic import GenericSnmpCollector
@@ -18,7 +18,7 @@ from net_topology.topology import build_links, map_endpoints
 logger = logging.getLogger("net_topology")
 
 
-def run_scan(config_path: str) -> None:
+async def run_scan(config_path: str) -> None:
     """Run the full scan pipeline."""
     # 1. Load config
     cfg = load_config(config_path)
@@ -57,7 +57,7 @@ def run_scan(config_path: str) -> None:
     logger.info("Found %d in-scope IPs to probe (including seed)", len(ips_macs))
 
     # 3. Discovery
-    probes = discover_devices(
+    probes = await discover_devices(
         ips_macs,
         get_credentials=cfg.get_snmp_credentials,
         max_workers=cfg.concurrency,
@@ -76,22 +76,27 @@ def run_scan(config_path: str) -> None:
     device_lldp: dict[str, tuple[Device, list[dict]]] = {}
     device_fdb: dict[str, tuple[Device, list[dict]]] = {}
 
-    def collect_device(probe: DeviceProbe):
+    async def collect_device(probe: DeviceProbe):
         creds = cfg.get_snmp_credentials(probe.ip)
         collector = GenericSnmpCollector(probe, creds)
-        return collector.collect()
+        return await collector.collect()
 
-    with ThreadPoolExecutor(max_workers=cfg.concurrency) as executor:
-        futures = {executor.submit(collect_device, p): p for p in managed}
-        for future in as_completed(futures):
-            probe = futures[future]
-            try:
-                device, lldp_entries, fdb_entries = future.result()
-                device_lldp[device.id] = (device, lldp_entries)
-                device_fdb[device.id] = (device, fdb_entries)
-                devices.append(device)
-            except Exception as e:
-                logger.error("Failed to collect %s: %s", probe.ip, e)
+    semaphore = asyncio.Semaphore(cfg.concurrency)
+
+    async def _limited_collect(probe: DeviceProbe):
+        async with semaphore:
+            return probe, await collect_device(probe)
+
+    tasks = [_limited_collect(p) for p in managed]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for result in results:
+        if isinstance(result, Exception):
+            logger.error("Failed to collect a device: %s", result)
+            continue
+        probe, (device, lldp_entries, fdb_entries) = result
+        device_lldp[device.id] = (device, lldp_entries)
+        device_fdb[device.id] = (device, fdb_entries)
+        devices.append(device)
 
     # 4b. Enrich MikroTik devices
     mt_hosts = {cfg.seed_host} | set(cfg.mikrotik_api_extra_devices)
@@ -136,7 +141,7 @@ def run_scan(config_path: str) -> None:
             iteration,
             len(new_ips),
         )
-        new_probes = discover_devices(
+        new_probes = await discover_devices(
             new_ips,
             get_credentials=cfg.get_snmp_credentials,
             max_workers=cfg.concurrency,
@@ -147,7 +152,7 @@ def run_scan(config_path: str) -> None:
                 creds = cfg.get_snmp_credentials(probe.ip)
                 collector = GenericSnmpCollector(probe, creds)
                 try:
-                    device, lldp_entries, fdb_entries = collector.collect()
+                    device, lldp_entries, fdb_entries = await collector.collect()
                     devices.append(device)
                     device_lldp[device.id] = (device, lldp_entries)
                     device_fdb[device.id] = (device, fdb_entries)
@@ -216,7 +221,7 @@ def main():
         logging.basicConfig(level=logging.ERROR)
 
     try:
-        run_scan(args.config)
+        asyncio.run(run_scan(args.config))
     except Exception as e:
         logger.error("Scan failed: %s", e)
         sys.exit(1)

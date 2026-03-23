@@ -13,7 +13,7 @@ class BaseCollector(ABC):
         self.credentials = credentials
 
     @abstractmethod
-    def collect(self) -> tuple[Device, list[dict], list[dict]]:
+    async def collect(self) -> tuple[Device, list[dict], list[dict]]:
         """Collect device data.
 
         Returns:

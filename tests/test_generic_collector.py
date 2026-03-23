@@ -1,4 +1,5 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
+import asyncio
 import pytest
 from net_topology.collectors.base import BaseCollector
 from net_topology.collectors.generic import GenericSnmpCollector
@@ -35,42 +36,44 @@ def test_collect_returns_device(mock_snmp_cls, probe, creds):
     mock_client = MagicMock()
 
     # Mock interface walk
-    mock_client.walk.side_effect = lambda oid: {
-        # ifDescr
-        "1.3.6.1.2.1.2.2.1.2": [
-            ("1.3.6.1.2.1.2.2.1.2.1", "gi1"),
-            ("1.3.6.1.2.1.2.2.1.2.2", "gi2"),
-        ],
-        # ifPhysAddress
-        "1.3.6.1.2.1.2.2.1.6": [
-            ("1.3.6.1.2.1.2.2.1.6.1", "0xaabbccddeef0"),
-            ("1.3.6.1.2.1.2.2.1.6.2", "0xaabbccddeef1"),
-        ],
-        # ifOperStatus
-        "1.3.6.1.2.1.2.2.1.8": [
-            ("1.3.6.1.2.1.2.2.1.8.1", "1"),
-            ("1.3.6.1.2.1.2.2.1.8.2", "2"),
-        ],
-        # ifHighSpeed
-        "1.3.6.1.2.1.31.1.1.1.15": [
-            ("1.3.6.1.2.1.31.1.1.1.15.1", "1000"),
-            ("1.3.6.1.2.1.31.1.1.1.15.2", "1000"),
-        ],
-        # LLDP remTable
-        "1.0.8802.1.1.2.1.4.1.1": [],
-        # CDP cache
-        "1.3.6.1.4.1.9.9.23.1.2.1.1": [],
-        # VLAN
-        "1.3.6.1.2.1.17.7.1.4.3.1": [],
-        # FDB
-        "1.3.6.1.2.1.17.7.1.2.2.1": [],
-        "1.3.6.1.2.1.17.4.3.1": [],
-    }.get(oid, [])
+    async def walk_side_effect(oid):
+        return {
+            # ifDescr
+            "1.3.6.1.2.1.2.2.1.2": [
+                ("1.3.6.1.2.1.2.2.1.2.1", "gi1"),
+                ("1.3.6.1.2.1.2.2.1.2.2", "gi2"),
+            ],
+            # ifPhysAddress
+            "1.3.6.1.2.1.2.2.1.6": [
+                ("1.3.6.1.2.1.2.2.1.6.1", "0xaabbccddeef0"),
+                ("1.3.6.1.2.1.2.2.1.6.2", "0xaabbccddeef1"),
+            ],
+            # ifOperStatus
+            "1.3.6.1.2.1.2.2.1.8": [
+                ("1.3.6.1.2.1.2.2.1.8.1", "1"),
+                ("1.3.6.1.2.1.2.2.1.8.2", "2"),
+            ],
+            # ifHighSpeed
+            "1.3.6.1.2.1.31.1.1.1.15": [
+                ("1.3.6.1.2.1.31.1.1.1.15.1", "1000"),
+                ("1.3.6.1.2.1.31.1.1.1.15.2", "1000"),
+            ],
+            # LLDP remTable
+            "1.0.8802.1.1.2.1.4.1.1": [],
+            # CDP cache
+            "1.3.6.1.4.1.9.9.23.1.2.1.1": [],
+            # VLAN
+            "1.3.6.1.2.1.17.7.1.4.3.1": [],
+            # FDB
+            "1.3.6.1.2.1.17.7.1.2.2.1": [],
+            "1.3.6.1.2.1.17.4.3.1": [],
+        }.get(oid, [])
 
+    mock_client.walk = AsyncMock(side_effect=walk_side_effect)
     mock_snmp_cls.return_value = mock_client
 
     collector = GenericSnmpCollector(probe, creds)
-    device, lldp_entries, fdb_entries = collector.collect()
+    device, lldp_entries, fdb_entries = asyncio.run(collector.collect())
 
     assert isinstance(device, Device)
     assert device.hostname == "zyxel-sw"
@@ -84,7 +87,7 @@ def test_collect_parses_lldp_neighbors(mock_snmp_cls, probe, creds):
     mock_client = MagicMock()
 
     # Minimal walks — only LLDP has data
-    def walk_side_effect(oid):
+    async def walk_side_effect(oid):
         if oid == "1.0.8802.1.1.2.1.4.1.1":
             return [
                 # lldpRemSysName (index 7)
@@ -96,10 +99,10 @@ def test_collect_parses_lldp_neighbors(mock_snmp_cls, probe, creds):
             ]
         return []
 
-    mock_client.walk.side_effect = walk_side_effect
+    mock_client.walk = AsyncMock(side_effect=walk_side_effect)
     mock_snmp_cls.return_value = mock_client
 
     collector = GenericSnmpCollector(probe, creds)
-    device, lldp_entries, fdb_entries = collector.collect()
+    device, lldp_entries, fdb_entries = asyncio.run(collector.collect())
 
     assert len(lldp_entries) >= 1

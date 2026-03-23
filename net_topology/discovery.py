@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Callable
 
@@ -50,11 +50,11 @@ def classify_device_type(sys_descr: str, sys_object_id: str) -> DeviceType:
         return DeviceType.FIREWALL
     return DeviceType.UNKNOWN
 
-def _probe_single(ip: str, mac: str | None, get_credentials: Callable[[str], SnmpCredentials]) -> DeviceProbe:
+async def _probe_single(ip: str, mac: str | None, get_credentials: Callable[[str], SnmpCredentials]) -> DeviceProbe:
     creds = get_credentials(ip)
     client = SnmpClient(ip, creds)
     try:
-        sys_info = client.get_sys_info()
+        sys_info = await client.get_sys_info()
     except (SnmpError, Exception) as e:
         logger.debug("SNMP probe failed for %s: %s", ip, e)
         return DeviceProbe(ip=ip, mac=mac, is_managed=False)
@@ -66,16 +66,16 @@ def _probe_single(ip: str, mac: str | None, get_credentials: Callable[[str], Snm
     logger.info("Discovered managed device: %s (%s) at %s", sys_name, vendor.value, ip)
     return DeviceProbe(ip=ip, mac=mac, is_managed=True, sys_name=sys_name, sys_descr=sys_descr, sys_object_id=sys_object_id, vendor=vendor, device_type=device_type)
 
-def discover_devices(ips_macs: list[tuple[str, str | None]], get_credentials: Callable[[str], SnmpCredentials], max_workers: int = 10) -> list[DeviceProbe]:
-    results: list[DeviceProbe] = []
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_probe_single, ip, mac, get_credentials): ip for ip, mac in ips_macs}
-        for future in as_completed(futures):
-            ip = futures[future]
+async def discover_devices(ips_macs: list[tuple[str, str | None]], get_credentials: Callable[[str], SnmpCredentials], max_workers: int = 10) -> list[DeviceProbe]:
+    semaphore = asyncio.Semaphore(max_workers)
+
+    async def _limited_probe(ip: str, mac: str | None) -> DeviceProbe:
+        async with semaphore:
             try:
-                result = future.result()
-                results.append(result)
+                return await _probe_single(ip, mac, get_credentials)
             except Exception as e:
                 logger.error("Unexpected error probing %s: %s", ip, e)
-                results.append(DeviceProbe(ip=ip, is_managed=False))
-    return results
+                return DeviceProbe(ip=ip, is_managed=False)
+
+    tasks = [_limited_probe(ip, mac) for ip, mac in ips_macs]
+    return list(await asyncio.gather(*tasks))

@@ -1,4 +1,5 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
+import asyncio
 import json
 import pytest
 from net_topology.cli import run_scan
@@ -6,7 +7,7 @@ from net_topology.cli import run_scan
 
 @patch("net_topology.cli.MikrotikCollector")
 @patch("net_topology.cli.GenericSnmpCollector")
-@patch("net_topology.cli.discover_devices")
+@patch("net_topology.cli.discover_devices", new_callable=AsyncMock)
 @patch("net_topology.cli.MikrotikSeeder")
 @patch("net_topology.cli.load_config")
 def test_run_scan_full_pipeline(
@@ -63,7 +64,7 @@ def test_run_scan_full_pipeline(
 
     # Generic collector
     mock_collector = MagicMock()
-    mock_collector.collect.return_value = (
+    mock_collector.collect = AsyncMock(return_value=(
         Device(
             hostname="zyxel-sw",
             ip_addresses=["192.168.1.2"],
@@ -74,10 +75,10 @@ def test_run_scan_full_pipeline(
         ),
         [],  # no LLDP
         [],  # no FDB
-    )
+    ))
     mock_generic_cls.return_value = mock_collector
 
-    run_scan(str(tmp_path / "config.yaml"))
+    asyncio.run(run_scan(str(tmp_path / "config.yaml")))
 
     # Verify output was written
     out_file = tmp_path / "topology.json"
@@ -93,4 +94,4 @@ def test_run_scan_missing_config_raises(mock_load_config):
     from net_topology.config import ConfigError
     mock_load_config.side_effect = ConfigError("Missing 'seed'")
     with pytest.raises(ConfigError):
-        run_scan("bad_config.yaml")
+        asyncio.run(run_scan("bad_config.yaml"))
